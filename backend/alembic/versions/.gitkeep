@@ -1,0 +1,2 @@
+# Keep this directory so Alembic can write revision files here.
+# Table migrations are deferred until domain logic is implemented.

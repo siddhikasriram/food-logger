@@ -1,0 +1,1 @@
+"""Food-logger FastAPI application."""
