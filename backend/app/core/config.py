@@ -12,14 +12,16 @@ class Settings(BaseSettings):
 
     mysql_host: str = "localhost"
     mysql_port: int = 3306
-    mysql_user: str = "foodlogger"
-    mysql_password: str = "foodlogger"
-    mysql_database: str = "food_logger"
+    mysql_user: str = "food_log"
+    mysql_password: str = "changeme"
+    mysql_database: str = "food_log"
     database_url: str = (
-        "mysql+pymysql://foodlogger:foodlogger@localhost:3306/food_logger"
+        "mysql+pymysql://food_log:changeme@localhost:3306/food_log"
     )
 
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4.1-mini"
 
     model_config = SettingsConfigDict(
         env_file=".env",

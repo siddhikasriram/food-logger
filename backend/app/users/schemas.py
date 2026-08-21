@@ -2,8 +2,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.shared.enums import IngredientPreference
-
 
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -32,18 +30,5 @@ class UserRead(BaseModel):
     calorie_goal: float | None
     created_at: datetime
     updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
-class UserIngredientPreferenceCreate(BaseModel):
-    ingredient_id: int
-    preference: IngredientPreference
-
-
-class UserIngredientPreferenceRead(BaseModel):
-    user_id: int
-    ingredient_id: int
-    preference: IngredientPreference
 
     model_config = {"from_attributes": True}

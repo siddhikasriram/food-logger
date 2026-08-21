@@ -13,7 +13,7 @@ from app.recipes.models import (  # noqa: F401
     RecipeTag,
     RecipeTagMapping,
 )
-from app.users.models import User, UserIngredientPreference  # noqa: F401
+from app.users.models import User  # noqa: F401
 
 config = context.config
 

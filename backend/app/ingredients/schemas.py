@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from app.shared.enums import NutritionSource
+
 
 class IngredientCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -20,6 +22,7 @@ class IngredientRead(BaseModel):
     carbs_per_100g: float
     fat_per_100g: float
     fiber_per_100g: float
+    nutrition_source: NutritionSource
     created_at: datetime
     updated_at: datetime
 

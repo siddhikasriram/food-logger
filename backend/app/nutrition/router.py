@@ -20,6 +20,4 @@ def get_daily_protein(
     day: date | None = Query(default=None),
     service: NutritionService = Depends(get_nutrition_service),
 ) -> DailyProteinSummary:
-    """Daily protein goal / consumed / remaining / progress. Implementation deferred."""
-    _ = (user_id, day, service)
-    raise NotImplementedError("Daily protein endpoint is not implemented in this scaffold.")
+    return service.daily_protein(user_id, day or date.today())

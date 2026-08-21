@@ -16,6 +16,12 @@ class RecipeIngredientRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RecipeIngredientDetail(BaseModel):
+    ingredient_id: int
+    name: str
+    quantity_g: float
+
+
 class RecipeTagRead(BaseModel):
     tag_id: int
     name: str
@@ -42,5 +48,7 @@ class RecipeRead(BaseModel):
     created_by: int | None
     created_at: datetime
     updated_at: datetime
+    ingredients: list[RecipeIngredientDetail] = Field(default_factory=list)
+    tags: list[RecipeTagRead] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

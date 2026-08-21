@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 
-from app.users.models import User, UserIngredientPreference
+from app.users.models import User
 
 
 class UserRepository:
-    """Data access for users and ingredient preferences. No business logic."""
+    """Data access for users. No business logic."""
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -12,14 +12,19 @@ class UserRepository:
     def get_by_id(self, user_id: int) -> User | None:
         return self.db.get(User, user_id)
 
-    def get_preference(
-        self, user_id: int, ingredient_id: int
-    ) -> UserIngredientPreference | None:
-        return (
-            self.db.query(UserIngredientPreference)
-            .filter(
-                UserIngredientPreference.user_id == user_id,
-                UserIngredientPreference.ingredient_id == ingredient_id,
-            )
-            .one_or_none()
-        )
+    def get_by_email(self, email: str) -> User | None:
+        return self.db.query(User).filter(User.email == email).one_or_none()
+
+    def list_all(self) -> list[User]:
+        return self.db.query(User).order_by(User.user_id).all()
+
+    def add(self, user: User) -> User:
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def save(self, user: User) -> User:
+        self.db.commit()
+        self.db.refresh(user)
+        return user

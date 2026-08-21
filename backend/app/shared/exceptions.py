@@ -15,3 +15,8 @@ class NotFoundError(AppError):
 class ConflictError(AppError):
     def __init__(self, message: str = "Resource already exists") -> None:
         super().__init__(message, status_code=409)
+
+
+class ServiceUnavailableError(AppError):
+    def __init__(self, message: str = "Service temporarily unavailable") -> None:
+        super().__init__(message, status_code=503)

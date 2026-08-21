@@ -17,6 +17,7 @@ class MealLogRead(BaseModel):
     meal_log_id: int
     user_id: int
     recipe_id: int
+    recipe_name: str
     meal_type: MealType
     servings: float
     consumed_at: datetime
