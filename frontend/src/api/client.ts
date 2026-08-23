@@ -1,7 +1,6 @@
 import type {
   ChatConfirmResponse,
   ChatMessageResponse,
-  ChatProposal,
   DailyProteinSummary,
   Ingredient,
   IngredientCreate,
@@ -77,14 +76,20 @@ export const api = {
     user_id: number;
     message: string;
     consumed_at?: string;
+    conversation_id?: string;
   }) =>
     request<ChatMessageResponse>("/chat/messages", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  confirmChatMeal: (proposal: ChatProposal) =>
+  confirmChatMeal: (conversationId: string) =>
     request<ChatConfirmResponse>("/chat/confirm", {
       method: "POST",
-      body: JSON.stringify({ proposal }),
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }),
+  cancelChatConversation: (conversationId: string) =>
+    request<{ assistant_message: string }>("/chat/cancel", {
+      method: "POST",
+      body: JSON.stringify({ conversation_id: conversationId }),
     }),
 };

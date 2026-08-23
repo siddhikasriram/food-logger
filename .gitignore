@@ -39,3 +39,4 @@ frontend/dist/
 
 # Docker
 *.log
+data/mysql/db/

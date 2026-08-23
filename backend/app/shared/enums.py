@@ -17,3 +17,8 @@ class QuantityUnit(StrEnum):
 class NutritionSource(StrEnum):
     MANUAL = "manual"
     LLM_ESTIMATE = "llm_estimate"
+
+
+class OntologyScope(StrEnum):
+    ALL = "all"
+    LOGGING = "logging"

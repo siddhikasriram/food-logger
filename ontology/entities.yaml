@@ -1,0 +1,79 @@
+version: 1
+entities:
+  - id: user
+    name: User
+    kind: actor
+    description: A person who owns goals and meal logs.
+    attributes: [user_id, protein_goal_g, calorie_goal]
+    scopes: [all, logging]
+
+  - id: ingredient
+    name: Ingredient
+    kind: food
+    description: A canonical food ingredient with nutrition values per 100 grams.
+    attributes:
+      - ingredient_id
+      - name
+      - calories_per_100g
+      - protein_per_100g
+      - carbs_per_100g
+      - fat_per_100g
+      - fiber_per_100g
+      - nutrition_source
+    scopes: [all, logging]
+
+  - id: recipe
+    name: Recipe
+    kind: food
+    description: A reusable composition of ingredients with a serving count.
+    attributes: [recipe_id, name, servings]
+    scopes: [all, logging]
+
+  - id: recipe_ingredient
+    name: Recipe Ingredient
+    kind: association
+    description: The quantity in grams of an ingredient used by a recipe.
+    attributes: [recipe_id, ingredient_id, quantity_g]
+    scopes: [all, logging]
+
+  - id: meal_log
+    name: Meal Log
+    kind: event
+    description: A confirmed record of recipe consumption by a user.
+    attributes: [meal_log_id, user_id, recipe_id, meal_type, servings, consumed_at]
+    scopes: [all, logging]
+
+  - id: meal_type
+    name: Meal Type
+    kind: vocabulary
+    description: The allowed meal periods.
+    attributes: [breakfast, lunch, dinner, snack]
+    scopes: [all, logging]
+
+  - id: quantity
+    name: Quantity
+    kind: value_object
+    description: A positive food amount represented in grams.
+    attributes: [amount, unit]
+    scopes: [all, logging]
+
+  - id: nutrient
+    name: Nutrient
+    kind: measurement
+    description: A measurable nutrition value used by the application.
+    attributes: [calories, protein_g, carbs_g, fat_g, fiber_g]
+    scopes: [all, logging]
+
+  - id: nutrition_source
+    name: Nutrition Source
+    kind: vocabulary
+    description: The provenance of an ingredient's nutrition values.
+    attributes: [manual, llm_estimate]
+    scopes: [all, logging]
+
+  - id: recipe_tag
+    name: Recipe Tag
+    kind: vocabulary
+    description: A descriptive category attached to reusable recipes.
+    attributes: [tag_id, name]
+    scopes: [all]

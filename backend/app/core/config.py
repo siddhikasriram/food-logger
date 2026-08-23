@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4.1-mini"
+    chat_conversation_ttl_seconds: int = 1800
 
     model_config = SettingsConfigDict(
         env_file=".env",

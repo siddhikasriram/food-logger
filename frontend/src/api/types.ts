@@ -142,11 +142,21 @@ export type ChatProposal = {
   contains_estimates: boolean;
 };
 
+export type ChatStatus =
+  | "rejected"
+  | "awaiting_recipe_consent"
+  | "awaiting_ingredients"
+  | "awaiting_confirmation"
+  | "summary_only";
+
 export type ChatMessageResponse = {
   assistant_message: string;
-  needs_confirmation: boolean;
-  proposal: ChatProposal;
-  meal_macros: NutritionTotals;
+  status: ChatStatus;
+  conversation_id: string | null;
+  proposal: ChatProposal | null;
+  meal_macros: NutritionTotals | null;
+  daily_protein: DailyProteinSummary | null;
+  summary_includes_unlogged_meal: boolean;
 };
 
 export type ChatConfirmResponse = {

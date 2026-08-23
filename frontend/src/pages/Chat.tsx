@@ -14,6 +14,7 @@ type ChatEntry = {
   role: "user" | "assistant";
   text: string;
   result?: ChatConfirmResponse;
+  preview?: ChatMessageResponse;
 };
 
 function MacroLine({ macros }: { macros: NutritionTotals }) {
@@ -34,50 +35,84 @@ export function ChatPage() {
     {
       id: 0,
       role: "assistant",
-      text: "Tell me what you ate. I’ll check your recipe catalog and prepare it for confirmation.",
+      text: "Tell me what you ate. I’ll check your recipe catalog before anything is saved.",
     },
   ]);
   const [pending, setPending] = useState<ChatMessageResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const awaitingConfirmation = pending?.status === "awaiting_confirmation";
+
   function addEntry(entry: Omit<ChatEntry, "id">) {
     setEntries((current) => [...current, { ...entry, id: Date.now() + current.length }]);
   }
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const message = text.trim();
-    if (!message || !userId || pending) {
+  function acceptResponse(response: ChatMessageResponse) {
+    addEntry({
+      role: "assistant",
+      text: response.assistant_message,
+      preview: response.status === "summary_only" ? response : undefined,
+    });
+    if (
+      response.status === "awaiting_recipe_consent" ||
+      response.status === "awaiting_ingredients" ||
+      response.status === "awaiting_confirmation"
+    ) {
+      setPending(response);
+    } else {
+      setPending(null);
+    }
+  }
+
+  async function sendMessage(message: string) {
+    if (!userId || awaitingConfirmation) {
       return;
     }
     addEntry({ role: "user", text: message });
-    setText("");
     setLoading(true);
     try {
       const response = await api.proposeChatMeal({
         user_id: userId,
         message,
-        consumed_at: localDateTime(),
+        consumed_at: pending ? undefined : localDateTime(),
+        conversation_id: pending?.conversation_id ?? undefined,
       });
-      addEntry({ role: "assistant", text: response.assistant_message });
-      setPending(response);
+      acceptResponse(response);
     } catch (error) {
       addEntry({
         role: "assistant",
-        text: error instanceof Error ? error.message : "I could not parse that meal.",
+        text: error instanceof Error ? error.message : "I could not process that message.",
       });
     } finally {
       setLoading(false);
     }
   }
 
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const message = text.trim();
+    if (!message || loading || awaitingConfirmation) {
+      return;
+    }
+    setText("");
+    await sendMessage(message);
+  }
+
+  async function answerRecipeConsent(answer: "yes" | "no") {
+    if (loading) {
+      return;
+    }
+    await sendMessage(answer);
+  }
+
   async function confirm() {
-    if (!pending) {
+    const conversationId = pending?.conversation_id;
+    if (!conversationId || !awaitingConfirmation) {
       return;
     }
     setLoading(true);
     try {
-      const result = await api.confirmChatMeal(pending.proposal);
+      const result = await api.confirmChatMeal(conversationId);
       addEntry({ role: "assistant", text: result.assistant_message, result });
       setPending(null);
     } catch (error) {
@@ -90,10 +125,32 @@ export function ChatPage() {
     }
   }
 
-  function cancel() {
-    setPending(null);
-    addEntry({ role: "assistant", text: "No changes were saved." });
+  async function cancel() {
+    const conversationId = pending?.conversation_id;
+    if (!conversationId) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await api.cancelChatConversation(conversationId);
+      addEntry({ role: "assistant", text: response.assistant_message });
+      setPending(null);
+    } catch (error) {
+      addEntry({
+        role: "assistant",
+        text: error instanceof Error ? error.message : "I could not cancel that conversation.",
+      });
+    } finally {
+      setLoading(false);
+    }
   }
+
+  const proposal = awaitingConfirmation ? pending?.proposal : null;
+  const proposalMacros = awaitingConfirmation ? pending?.meal_macros : null;
+  const inputPlaceholder =
+    pending?.status === "awaiting_ingredients"
+      ? "Example: 200g chicken, 100g pasta, 50g tomato sauce"
+      : "Example: I ate two servings of chicken curry for lunch";
 
   return (
     <section className="chat-panel">
@@ -119,6 +176,17 @@ export function ChatPage() {
                   </p>
                 </div>
               ) : null}
+              {entry.preview?.meal_macros && entry.preview.daily_protein ? (
+                <div className="chat-result">
+                  <MacroLine macros={entry.preview.meal_macros} />
+                  <p>
+                    Projected today:{" "}
+                    {entry.preview.daily_protein.protein_consumed_g.toFixed(1)}g of{" "}
+                    {entry.preview.daily_protein.protein_goal_g.toFixed(1)}g protein
+                    {entry.preview.summary_includes_unlogged_meal ? " (meal not saved)" : ""}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         ))}
@@ -129,24 +197,49 @@ export function ChatPage() {
         ) : null}
       </div>
 
-      {pending ? (
+      {pending?.status === "awaiting_recipe_consent" ? (
+        <div className="confirmation-actions">
+          <button type="button" onClick={() => void answerRecipeConsent("yes")} disabled={loading}>
+            Add recipe
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={() => void answerRecipeConsent("no")}
+            disabled={loading}
+          >
+            Don’t add
+          </button>
+          <button type="button" className="ghost" onClick={() => void cancel()} disabled={loading}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
+
+      {pending?.status === "awaiting_ingredients" ? (
+        <div className="confirmation-actions">
+          <button type="button" className="ghost" onClick={() => void cancel()} disabled={loading}>
+            Cancel recipe
+          </button>
+        </div>
+      ) : null}
+
+      {proposal && proposalMacros ? (
         <article className="confirmation-card">
           <div className="confirmation-title">
             <div>
-              <p className="eyebrow">
-                {pending.proposal.recipe_id ? "Catalog match" : "New recipe"}
-              </p>
-              <h3>{pending.proposal.recipe_name}</h3>
+              <p className="eyebrow">{proposal.recipe_id ? "Catalog match" : "New recipe"}</p>
+              <h3>{proposal.recipe_name}</h3>
             </div>
-            {pending.proposal.contains_estimates ? (
+            {proposal.contains_estimates ? (
               <span className="estimate-badge">AI estimate</span>
             ) : null}
           </div>
           <p>
-            {pending.proposal.meal_type} · {pending.proposal.servings} serving(s)
+            {proposal.meal_type} · {proposal.servings} serving(s)
           </p>
           <ul className="plain-list confirmation-ingredients">
-            {pending.proposal.ingredients.map((ingredient, index) => (
+            {proposal.ingredients.map((ingredient, index) => (
               <li key={`${ingredient.ingredient_id ?? ingredient.name}-${index}`}>
                 {ingredient.quantity_g}g {ingredient.name}
                 {ingredient.is_estimate ? (
@@ -155,29 +248,29 @@ export function ChatPage() {
               </li>
             ))}
           </ul>
-          <MacroLine macros={pending.meal_macros} />
+          <MacroLine macros={proposalMacros} />
           <div className="confirmation-actions">
             <button type="button" onClick={() => void confirm()} disabled={loading}>
               Confirm and log
             </button>
-            <button type="button" className="ghost" onClick={cancel} disabled={loading}>
+            <button type="button" className="ghost" onClick={() => void cancel()} disabled={loading}>
               Cancel
             </button>
           </div>
         </article>
       ) : null}
 
-      <form className="chat-compose" onSubmit={onSubmit}>
+      <form className="chat-compose" onSubmit={(event) => void onSubmit(event)}>
         <textarea
           value={text}
           onChange={(event) => setText(event.target.value)}
-          placeholder="Example: I ate two servings of chicken curry for lunch"
+          placeholder={inputPlaceholder}
           rows={2}
           maxLength={2000}
-          disabled={loading || pending !== null}
+          disabled={loading || awaitingConfirmation}
           aria-label="Describe your meal"
         />
-        <button type="submit" disabled={loading || pending !== null || !text.trim()}>
+        <button type="submit" disabled={loading || awaitingConfirmation || !text.trim()}>
           Send
         </button>
       </form>

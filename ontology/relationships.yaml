@@ -1,0 +1,71 @@
+version: 1
+relationships:
+  - id: user_logs_meal
+    name: logs
+    source: user
+    target: meal_log
+    description: A user confirms and owns a meal log.
+    scopes: [all, logging]
+
+  - id: meal_log_records_recipe
+    name: records
+    source: meal_log
+    target: recipe
+    description: A meal log records consumption of one recipe.
+    scopes: [all, logging]
+
+  - id: recipe_has_ingredient
+    name: has ingredient
+    source: recipe
+    target: recipe_ingredient
+    description: A recipe contains one or more quantified ingredient associations.
+    scopes: [all, logging]
+
+  - id: recipe_ingredient_references_ingredient
+    name: references
+    source: recipe_ingredient
+    target: ingredient
+    description: A recipe ingredient resolves to a canonical ingredient.
+    scopes: [all, logging]
+
+  - id: recipe_ingredient_has_quantity
+    name: has quantity
+    source: recipe_ingredient
+    target: quantity
+    description: A recipe ingredient stores a positive quantity in grams.
+    scopes: [all, logging]
+
+  - id: meal_log_uses_meal_type
+    name: uses
+    source: meal_log
+    target: meal_type
+    description: A meal log is classified as breakfast, lunch, dinner, or snack.
+    scopes: [all, logging]
+
+  - id: ingredient_has_nutrient
+    name: has nutrient
+    source: ingredient
+    target: nutrient
+    description: Ingredient nutrition is normalized per 100 grams.
+    scopes: [all, logging]
+
+  - id: ingredient_has_nutrition_source
+    name: has source
+    source: ingredient
+    target: nutrition_source
+    description: Ingredient nutrition records whether values are manual or estimated.
+    scopes: [all, logging]
+
+  - id: recipe_has_tag
+    name: has tag
+    source: recipe
+    target: recipe_tag
+    description: A recipe may have descriptive tags.
+    scopes: [all]
+
+  - id: user_creates_recipe
+    name: creates
+    source: user
+    target: recipe
+    description: A user may be attributed as the creator of a shared recipe.
+    scopes: [all]

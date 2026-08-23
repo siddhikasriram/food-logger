@@ -8,16 +8,25 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.core.dependencies import db_session
-from app.ingredients.models import Ingredient  # noqa: F401
+from app.model.ingredient import Ingredient  # noqa: F401
 from app.main import create_app
-from app.meals.models import MealLog  # noqa: F401
-from app.recipes.models import (  # noqa: F401
+from app.model.meal import MealLog  # noqa: F401
+from app.model.ontology import (  # noqa: F401
+    OntologyEntity,
+    OntologyEntityScope,
+    OntologyRelationship,
+    OntologyRelationshipScope,
+    OntologyRule,
+    OntologyRuleScope,
+)
+from app.model.recipe import (  # noqa: F401
     Recipe,
     RecipeIngredient,
     RecipeTag,
     RecipeTagMapping,
 )
-from app.users.models import User  # noqa: F401
+from app.provider.ontology_sync import sync_ontology
+from app.model.user import User  # noqa: F401
 
 
 @pytest.fixture()
@@ -36,6 +45,9 @@ def client() -> Generator[TestClient, None, None]:
 
     TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, class_=Session)
     Base.metadata.create_all(bind=engine)
+    with TestingSessionLocal() as setup_db:
+        sync_ontology(setup_db)
+        setup_db.commit()
 
     def override_db_session() -> Generator[Session, None, None]:
         db = TestingSessionLocal()

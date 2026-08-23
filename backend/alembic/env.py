@@ -5,15 +5,23 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.core.database import Base
-from app.ingredients.models import Ingredient  # noqa: F401
-from app.meals.models import MealLog  # noqa: F401
-from app.recipes.models import (  # noqa: F401
+from app.model.ingredient import Ingredient  # noqa: F401
+from app.model.meal import MealLog  # noqa: F401
+from app.model.ontology import (  # noqa: F401
+    OntologyEntity,
+    OntologyEntityScope,
+    OntologyRelationship,
+    OntologyRelationshipScope,
+    OntologyRule,
+    OntologyRuleScope,
+)
+from app.model.recipe import (  # noqa: F401
     Recipe,
     RecipeIngredient,
     RecipeTag,
     RecipeTagMapping,
 )
-from app.users.models import User  # noqa: F401
+from app.model.user import User  # noqa: F401
 
 config = context.config
 

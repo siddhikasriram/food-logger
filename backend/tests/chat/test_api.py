@@ -2,24 +2,73 @@ from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from app.chat.router import get_meal_parser
-from app.chat.schemas import ParsedIngredient, ParsedMeal
+from app.provider.conversation_store import ConversationStore
+from app.provider.guardrail import (
+    InputCategory,
+    InputClassification,
+)
+from app.router.chat import get_conversation_store, get_guardrail, get_meal_assistant
+from app.schema.chat import (
+    ExtractedFood,
+    ExtractedIngredients,
+    ParsedIngredient,
+)
 from app.shared.exceptions import ServiceUnavailableError
 
 
-class FakeParser:
-    def __init__(self, result: ParsedMeal) -> None:
-        self.result = result
-        self.catalog: dict[str, object] | None = None
+class FakeAssistant:
+    def __init__(
+        self,
+        *,
+        food_name: str = "Chicken bowl",
+        protein_grams: float = 25,
+        ingredients: list[ParsedIngredient] | None = None,
+    ) -> None:
+        self.food_name = food_name
+        self.protein_grams = protein_grams
+        self.ingredients = ingredients or []
+        self.ingredient_catalog: dict[str, object] | None = None
 
-    def parse(self, _message: str, catalog: dict[str, object]) -> ParsedMeal:
-        self.catalog = catalog
-        return self.result
+    def extract_food(self, _message: str) -> ExtractedFood:
+        return ExtractedFood(
+            food_name=self.food_name,
+            quantity=1,
+            unit="bowl",
+            protein_grams=self.protein_grams,
+            servings=2,
+            meal_type="lunch",
+        )
+
+    def extract_ingredients(
+        self, _message: str, catalog: dict[str, object]
+    ) -> ExtractedIngredients:
+        self.ingredient_catalog = catalog
+        return ExtractedIngredients(ingredients=self.ingredients)
 
 
-class FailingParser:
-    def parse(self, _message: str, _catalog: dict[str, object]) -> ParsedMeal:
+class FakeGuardrail:
+    def __init__(self, category: InputCategory = InputCategory.FOOD) -> None:
+        self.category = category
+
+    def classify(self, _message: str) -> InputClassification:
+        return InputClassification(category=self.category)
+
+
+class FailingGuardrail:
+    def classify(self, _message: str) -> InputClassification:
         raise ServiceUnavailableError("LLM unavailable")
+
+
+def configure(
+    client: TestClient,
+    assistant: FakeAssistant,
+    category: InputCategory = InputCategory.FOOD,
+) -> ConversationStore:
+    store = ConversationStore()
+    client.app.dependency_overrides[get_guardrail] = lambda: FakeGuardrail(category)
+    client.app.dependency_overrides[get_meal_assistant] = lambda: assistant
+    client.app.dependency_overrides[get_conversation_store] = lambda: store
+    return store
 
 
 def create_user(client: TestClient) -> dict:
@@ -33,25 +82,7 @@ def create_user(client: TestClient) -> dict:
     ).json()
 
 
-def existing_ingredient(
-    ingredient_id: int, name: str, quantity_g: float
-) -> ParsedIngredient:
-    return ParsedIngredient(
-        ingredient_id=ingredient_id,
-        name=name,
-        quantity_g=quantity_g,
-        calories_per_100g=None,
-        protein_per_100g=None,
-        carbs_per_100g=None,
-        fat_per_100g=None,
-        fiber_per_100g=None,
-    )
-
-
-def test_existing_recipe_requires_confirmation_before_logging(
-    client: TestClient,
-) -> None:
-    user = create_user(client)
+def create_chicken_recipe(client: TestClient) -> dict:
     ingredient = client.post(
         "/api/v1/ingredients",
         json={
@@ -62,7 +93,7 @@ def test_existing_recipe_requires_confirmation_before_logging(
             "fat_per_100g": 4,
         },
     ).json()
-    recipe = client.post(
+    return client.post(
         "/api/v1/recipes",
         json={
             "name": "Chicken bowl",
@@ -74,135 +105,222 @@ def test_existing_recipe_requires_confirmation_before_logging(
             ],
         },
     ).json()
-    parser = FakeParser(
-        ParsedMeal(
-            recipe_id=recipe["recipe_id"],
-            recipe_name="Chicken bowl",
-            description=None,
-            servings=2,
-            meal_type="lunch",
-            ingredients=[],
-        )
-    )
-    client.app.dependency_overrides[get_meal_parser] = lambda: parser
 
-    proposed = client.post(
+
+def start(client: TestClient, user_id: int, message: str = "two chicken bowls"):
+    return client.post(
         "/api/v1/chat/messages",
         json={
-            "user_id": user["user_id"],
-            "message": "two chicken bowls",
+            "user_id": user_id,
+            "message": message,
             "consumed_at": "2026-08-20T12:00:00",
         },
     )
+
+
+def continue_conversation(
+    client: TestClient, user_id: int, conversation_id: str, message: str
+):
+    return client.post(
+        "/api/v1/chat/messages",
+        json={
+            "user_id": user_id,
+            "conversation_id": conversation_id,
+            "message": message,
+        },
+    )
+
+
+def test_non_food_is_rejected_without_creating_conversation(
+    client: TestClient,
+) -> None:
+    user = create_user(client)
+    configure(client, FakeAssistant(), InputCategory.WATER)
+
+    response = start(client, user["user_id"], "two glasses of water")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "rejected"
+    assert response.json()["conversation_id"] is None
+    assert client.get(
+        "/api/v1/meals",
+        params={"user_id": user["user_id"], "day": "2026-08-20"},
+    ).json() == []
+
+
+def test_existing_recipe_requires_confirmation_before_logging(
+    client: TestClient,
+) -> None:
+    user = create_user(client)
+    recipe = create_chicken_recipe(client)
+    configure(client, FakeAssistant())
+
+    proposed = start(client, user["user_id"])
+
     assert proposed.status_code == 200
     body = proposed.json()
+    assert body["status"] == "awaiting_confirmation"
     assert body["proposal"]["recipe_id"] == recipe["recipe_id"]
     assert body["meal_macros"]["protein_g"] == 40
-    assert parser.catalog is not None
     assert client.get(
         "/api/v1/meals",
         params={"user_id": user["user_id"], "day": "2026-08-20"},
     ).json() == []
 
     confirmed = client.post(
-        "/api/v1/chat/confirm", json={"proposal": body["proposal"]}
+        "/api/v1/chat/confirm",
+        json={"conversation_id": body["conversation_id"]},
     )
+
     assert confirmed.status_code == 200
-    result = confirmed.json()
-    assert result["created_recipe"] is False
-    assert result["daily_protein"]["protein_consumed_g"] == 40
+    assert confirmed.json()["created_recipe"] is False
+    assert confirmed.json()["daily_protein"]["protein_consumed_g"] == 40
 
 
-def test_new_recipe_creates_estimated_catalog_records_once(
+def test_missing_recipe_no_returns_unlogged_projected_summary(
     client: TestClient,
 ) -> None:
     user = create_user(client)
-    parser = FakeParser(
-        ParsedMeal(
-            recipe_id=None,
-            recipe_name="Tofu scramble",
-            description="A tofu breakfast",
-            servings=1,
-            meal_type="breakfast",
-            ingredients=[
-                ParsedIngredient(
-                    ingredient_id=None,
-                    name="Firm tofu",
-                    quantity_g=200,
-                    calories_per_100g=80,
-                    protein_per_100g=10,
-                    carbs_per_100g=2,
-                    fat_per_100g=4,
-                    fiber_per_100g=1,
-                )
-            ],
-        )
+    configure(
+        client,
+        FakeAssistant(food_name="Mystery plate", protein_grams=30),
     )
-    client.app.dependency_overrides[get_meal_parser] = lambda: parser
+    proposed = start(client, user["user_id"], "mystery plate")
+    conversation_id = proposed.json()["conversation_id"]
 
-    proposed = client.post(
-        "/api/v1/chat/messages",
-        json={
-            "user_id": user["user_id"],
-            "message": "tofu scramble",
-            "consumed_at": datetime(2026, 8, 20, 8).isoformat(),
-        },
+    skipped = continue_conversation(
+        client, user["user_id"], conversation_id, "no"
     )
-    assert proposed.status_code == 200
-    body = proposed.json()
-    assert body["proposal"]["contains_estimates"] is True
+
+    assert skipped.status_code == 200
+    body = skipped.json()
+    assert body["status"] == "summary_only"
+    assert body["summary_includes_unlogged_meal"] is True
+    assert body["daily_protein"]["protein_consumed_g"] == 30
+    assert client.get("/api/v1/recipes").json() == []
+    assert client.get(
+        "/api/v1/meals",
+        params={"user_id": user["user_id"], "day": "2026-08-20"},
+    ).json() == []
+    assert client.post(
+        "/api/v1/chat/confirm", json={"conversation_id": conversation_id}
+    ).status_code == 404
+
+
+def test_missing_recipe_collects_ingredients_then_creates_and_logs(
+    client: TestClient,
+) -> None:
+    user = create_user(client)
+    assistant = FakeAssistant(
+        food_name="Tofu scramble",
+        ingredients=[
+            ParsedIngredient(
+                ingredient_id=None,
+                name="Firm tofu",
+                quantity_g=200,
+                calories_per_100g=80,
+                protein_per_100g=10,
+                carbs_per_100g=2,
+                fat_per_100g=4,
+                fiber_per_100g=1,
+            )
+        ],
+    )
+    configure(client, assistant)
+    proposed = start(client, user["user_id"], "tofu scramble")
+    conversation_id = proposed.json()["conversation_id"]
+
+    consent = continue_conversation(
+        client, user["user_id"], conversation_id, "yes"
+    )
+    assert consent.json()["status"] == "awaiting_ingredients"
+
+    ingredients = continue_conversation(
+        client, user["user_id"], conversation_id, "200g firm tofu"
+    )
+    assert ingredients.json()["status"] == "awaiting_confirmation"
+    assert ingredients.json()["meal_macros"]["protein_g"] == 40
     assert client.get("/api/v1/ingredients").json() == []
+    assert client.get("/api/v1/recipes").json() == []
+    assert assistant.ingredient_catalog is not None
 
-    first = client.post(
-        "/api/v1/chat/confirm", json={"proposal": body["proposal"]}
+    confirmed = client.post(
+        "/api/v1/chat/confirm",
+        json={"conversation_id": conversation_id},
     )
-    assert first.status_code == 200
-    assert first.json()["created_recipe"] is True
-    assert first.json()["meal_macros"]["protein_g"] == 20
+    assert confirmed.status_code == 200
+    assert confirmed.json()["created_recipe"] is True
+    assert confirmed.json()["meal_macros"]["protein_g"] == 40
+    assert client.get("/api/v1/ingredients").json()[0]["nutrition_source"] == "llm_estimate"
+    assert len(client.get("/api/v1/recipes").json()) == 1
 
-    second = client.post(
-        "/api/v1/chat/confirm", json={"proposal": body["proposal"]}
+
+def test_invalid_consent_and_early_confirmation_preserve_state(
+    client: TestClient,
+) -> None:
+    user = create_user(client)
+    configure(client, FakeAssistant(food_name="Unknown meal"))
+    proposed = start(client, user["user_id"])
+    conversation_id = proposed.json()["conversation_id"]
+
+    unclear = continue_conversation(
+        client, user["user_id"], conversation_id, "maybe"
     )
-    assert second.status_code == 200
-    assert second.json()["created_recipe"] is False
+    assert unclear.json()["status"] == "awaiting_recipe_consent"
 
-    ingredients = client.get("/api/v1/ingredients").json()
-    recipes = client.get("/api/v1/recipes").json()
-    assert len(ingredients) == 1
-    assert ingredients[0]["nutrition_source"] == "llm_estimate"
-    assert len(recipes) == 1
+    early = client.post(
+        "/api/v1/chat/confirm", json={"conversation_id": conversation_id}
+    )
+    assert early.status_code == 400
+    consent = continue_conversation(
+        client, user["user_id"], conversation_id, "yes"
+    )
+    assert consent.json()["status"] == "awaiting_ingredients"
+
+
+def test_cancel_removes_pending_conversation(client: TestClient) -> None:
+    user = create_user(client)
+    configure(client, FakeAssistant(food_name="Unknown meal"))
+    proposed = start(client, user["user_id"])
+    conversation_id = proposed.json()["conversation_id"]
+
+    cancelled = client.post(
+        "/api/v1/chat/cancel", json={"conversation_id": conversation_id}
+    )
+
+    assert cancelled.status_code == 200
+    assert client.post(
+        "/api/v1/chat/cancel", json={"conversation_id": conversation_id}
+    ).status_code == 404
 
 
 def test_provider_failure_does_not_write_data(client: TestClient) -> None:
     user = create_user(client)
-    client.app.dependency_overrides[get_meal_parser] = lambda: FailingParser()
+    configure(client, FakeAssistant())
+    client.app.dependency_overrides[get_guardrail] = lambda: FailingGuardrail()
 
-    response = client.post(
-        "/api/v1/chat/messages",
-        json={"user_id": user["user_id"], "message": "something"},
-    )
+    response = start(client, user["user_id"], "something")
+
     assert response.status_code == 503
     assert client.get("/api/v1/ingredients").json() == []
     assert client.get("/api/v1/recipes").json() == []
 
 
-def test_missing_catalog_id_is_rejected_without_writes(client: TestClient) -> None:
+def test_expired_conversation_is_rejected(client: TestClient) -> None:
     user = create_user(client)
-    parser = FakeParser(
-        ParsedMeal(
-            recipe_id=None,
-            recipe_name="Missing ingredient meal",
-            description=None,
-            servings=1,
-            meal_type="dinner",
-            ingredients=[existing_ingredient(999, "Missing", 100)],
-        )
+    now = 0.0
+    store = ConversationStore(ttl_seconds=10, clock=lambda: now)
+    client.app.dependency_overrides[get_guardrail] = lambda: FakeGuardrail()
+    client.app.dependency_overrides[get_meal_assistant] = lambda: FakeAssistant(
+        food_name="Unknown meal"
     )
-    client.app.dependency_overrides[get_meal_parser] = lambda: parser
+    client.app.dependency_overrides[get_conversation_store] = lambda: store
+    proposed = start(client, user["user_id"])
+    conversation_id = proposed.json()["conversation_id"]
 
-    response = client.post(
-        "/api/v1/chat/messages",
-        json={"user_id": user["user_id"], "message": "missing"},
+    now = 11.0
+    expired = continue_conversation(
+        client, user["user_id"], conversation_id, "yes"
     )
-    assert response.status_code == 503
-    assert client.get("/api/v1/recipes").json() == []
+
+    assert expired.status_code == 404
